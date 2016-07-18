@@ -70,6 +70,17 @@ struct copy_constructible :
     ::boost::mpl::vector<constructible<T(const T&)>, destructible<T> >
 {};
 
+#ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
+/**
+ * The @ref move_constructible concept allows objects to
+ * be moved and destroyed.
+ */
+template<class T = _self>
+struct move_constructible :
+    ::boost::mpl::vector<constructible<T(T&&)>, destructible<T> >
+{};
+#endif
+
 /**
  * Enables assignment of @ref any types.
  */

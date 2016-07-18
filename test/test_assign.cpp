@@ -30,8 +30,7 @@ struct common : ::boost::mpl::vector<
 #ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
 template<class T = _self>
 struct movable_common : ::boost::mpl::vector<
-    destructible<T>,
-    constructible<T(T&&)>,
+    move_constructible<T>,
     typeid_<T>
 > {};
 #endif

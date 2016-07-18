@@ -85,6 +85,21 @@ struct compute_bases
 template<class T>
 T make(T*) { return T(); }
 
+#ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
+// Special helper-functions for distinguishing
+// between move- and copy-construction.
+inline void make(void*, void*) {}
+template<class Sig>
+constructible<Sig> make(constructible<Sig>*, void*)
+{ return constructible<Sig>(); }
+template<class Sig>
+constructible<Sig> make(void*, constructible<Sig>*)
+{ return constructible<Sig>(); }
+template<class Sig0, class Sig1>
+constructible<Sig0> make(constructible<Sig0>*, constructible<Sig1>*)
+{ return constructible<Sig0>(); }
+#endif
+
 // This dance is necessary to avoid errors calling
 // an ellipsis function with a non-trivially-copyable
 // argument.
@@ -172,6 +187,11 @@ public:
     {}
 #ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
     /** INTERNAL ONLY */
+    any(::boost::type_erasure::detail::storage& data_arg, const table_type& table_arg)
+      : table(table_arg),
+        data(data_arg)
+    {}
+    /** INTERNAL ONLY */
     any(::boost::type_erasure::detail::storage&& data_arg, const table_type& table_arg)
       : table(table_arg),
         data(data_arg)
@@ -236,10 +256,11 @@ public:
      * \param data The object to store in the @ref any.
      *
      * \pre @c U is a model of @c Concept.
-     * \pre @c U must be \CopyConstructible.
+     * \pre @c U must be \CopyConstructible (or instead could be \MoveConstructible
+     *      if @c data is an rvalue and the compiler supports rvalue-references).
      * \pre @c Concept must not refer to any non-deduced placeholder besides @c T.
      *
-     * \throws std::bad_alloc or whatever that the copy
+     * \throws std::bad_alloc or whatever the copy (or move)
      *         constructor of @c U throws.
      *
      * \note This constructor never matches if the argument is
@@ -264,12 +285,13 @@ public:
      *        all the placeholders should bind to.
      *
      * \pre @c U is a model of @c Concept.
-     * \pre @c U must be \CopyConstructible.
+     * \pre @c U must be \CopyConstructible (or instead could be \MoveConstructible
+     *      if @c data is an rvalue and the compiler supports rvalue-references).
      * \pre @c Map is an MPL map with an entry for every
      *         non-deduced placeholder referred to by @c Concept.
      * \pre @c @c T must map to @c U in @c Map.
      *
-     * \throws std::bad_alloc or whatever that the copy
+     * \throws std::bad_alloc or whatever the copy (or move)
      *         constructor of @c U throws.
      *
      * \note This constructor never matches if the argument is an @ref any.
@@ -312,15 +334,80 @@ public:
         BOOST_MPL_ASSERT((::boost::is_same<
             typename ::boost::mpl::at<Map, T>::type, U*>));
     }
+#ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
+    /**
+     * Moves an @ref any.
+     *
+     * \param other The object to move from.
+     *
+     * \pre @c Concept must either contain @ref constructible "constructible<T(T&&)>"
+     *      (which is included in @ref move_constructible "move_constructible<T>")
+     *      or @ref constructible "constructible<T(const T&)>"
+     *      (which is included in @ref copy_constructible "copy_constructible<T>").
+     *      In the latter case the @ref any is not moved but copied instead.
+     *
+     * \throws Whatever the move constructor of the contained type throws. In case of
+     *         copy-construction std::bad_alloc or whatever the copy constructor of the
+     *         contained type throws.
+     */
+    any(any&& other)
+      : table(::boost::type_erasure::detail::access::table(other)),
+        data(::boost::type_erasure::call(
+            ::boost::type_erasure::detail::make(
+                false? this->_boost_type_erasure_deduce_move_constructor(std::move(other)) : 0,
+                false? this->_boost_type_erasure_deduce_constructor(std::move(other)) : 0
+            ), std::move(other))
+        )
+    {}
+    /**
+     * Upcasts from an @ref any with stricter requirements to
+     * an @ref any with weaker requirements.
+     *
+     * \param other The object to move from.
+     *
+     * \pre @c Concept must either contain @ref constructible "constructible<T(T&&)>"
+     *      (which is included in @ref move_constructible "move_constructible<T>")
+     *      or @ref constructible "constructible<T(const T&)>"
+     *      (which is included in @ref copy_constructible "copy_constructible<T>").
+     *      In the latter case the @ref any is not moved but copied instead.
+     * \pre @c Concept must not refer to any non-deduced placeholder besides @c T.
+     * \pre After substituting @c T for @c Tag2, the requirements of @c Concept2
+     *      must be a superset of the requirements of @c Concept.
+     *
+     * \throws Whatever the move constructor of the contained type throws. In case of
+     *         copy-constructing std::bad_alloc or whatever the copy constructor of the
+     *         contained type throws.
+     */
+    template<class Concept2, class Tag2>
+    any(any<Concept2, Tag2>&& other)
+      : table(
+            ::boost::type_erasure::detail::access::table(other),
+            ::boost::mpl::map<
+                ::boost::mpl::pair<
+                    T,
+                    typename ::boost::remove_const<
+                        typename ::boost::remove_reference<Tag2>::type
+                    >::type
+                >
+            >()
+        ),
+        data(::boost::type_erasure::call(
+            ::boost::type_erasure::detail::make(
+                false? other._boost_type_erasure_deduce_move_constructor(std::move(other)) : 0,
+                false? other._boost_type_erasure_deduce_constructor(std::move(other)) : 0
+            ), std::move(other))
+        )
+    {}
+#endif
     /**
      * Copies an @ref any.
      *
      * \param other The object to make a copy of.
      *
      * \pre @c Concept must contain @ref constructible "constructible<T(const T&)>".
-     *     (This is included in @ref copy_constructible "copy_constructible<T>")
+     *      (which is included in @ref copy_constructible "copy_constructible<T>".)
      *
-     * \throws std::bad_alloc or whatever that the copy
+     * \throws std::bad_alloc or whatever the copy
      *         constructor of the contained type throws.
      */
     any(const any& other)
@@ -333,13 +420,13 @@ public:
      *
      * \param other The object to make a copy of.
      *
-     * \pre @c Concept must contain @ref constructible<T(const T&)>.
+     * \pre @c Concept must contain @ref constructible "constructible<T(const T&)>"
+     *      (which is included in @ref copy_constructible "copy_constructible<T>").
      * \pre @c Concept must not refer to any non-deduced placeholder besides @c T.
-     * \pre After substituting @c T for @c Tag2, the requirements of
-     *      @c Concept2 must be a superset of the requirements of
-     *      @c Concept.
+     * \pre After substituting @c T for @c Tag2, the requirements of @c Concept2
+     *      must be a superset of the requirements of @c Concept.
      *
-     * \throws std::bad_alloc or whatever that the copy
+     * \throws std::bad_alloc or whatever the copy
      *         constructor of the contained type throws.
      */
     template<class Concept2, class Tag2>
@@ -370,7 +457,8 @@ public:
      * \param binding Specifies the mapping between the placeholders
      *        used by the two concepts.
      *
-     * \pre @c Concept must contain @ref constructible<T(const T&)>.
+     * \pre @c Concept must contain @ref constructible "constructible<T(const T&)>"
+     *      (which is included in @ref copy_constructible "copy_constructible<T>").
      * \pre @c Map must be an MPL map with keys for all the non-deduced
      *      placeholders used by @c Concept and values for the corresponding
      *      placeholders in @c Concept2.
@@ -473,14 +561,7 @@ public:
 
 #else
 #ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
-    any(any&& other)
-      : table(::boost::type_erasure::detail::access::table(other)),
-        data(::boost::type_erasure::call(
-            ::boost::type_erasure::detail::make(
-                false? this->_boost_type_erasure_deduce_constructor(std::move(other)) : 0
-            ), std::move(other))
-        )
-    {}
+    // NOTE: Why not the same implementation as for the const reference above?
     any(any& other)
       : table(::boost::type_erasure::detail::access::table(other)),
         data(::boost::type_erasure::call(
@@ -506,25 +587,6 @@ public:
             ::boost::type_erasure::detail::make(
                 false? other._boost_type_erasure_deduce_constructor(other) : 0
             ), other)
-        )
-    {}
-    template<class Concept2, class Tag2>
-    any(any<Concept2, Tag2>&& other)
-      : table(
-            ::boost::type_erasure::detail::access::table(other),
-            ::boost::mpl::map<
-                ::boost::mpl::pair<
-                    T,
-                    typename ::boost::remove_const<
-                        typename ::boost::remove_reference<Tag2>::type
-                    >::type
-                >
-            >()
-        ),
-        data(::boost::type_erasure::call(
-            ::boost::type_erasure::detail::make(
-                false? other._boost_type_erasure_deduce_constructor(std::move(other)) : 0
-            ), std::move(other))
         )
     {}
 #endif
@@ -871,6 +933,7 @@ public:
       : table(::boost::type_erasure::detail::access::table(other)),
         data(::boost::type_erasure::call(
             ::boost::type_erasure::detail::make(
+                false? this->_boost_type_erasure_deduce_move_constructor(std::move(other)) : 0,
                 false? this->_boost_type_erasure_deduce_constructor(std::move(other)) : 0
             ), std::move(other))
         )
@@ -1380,6 +1443,19 @@ private:
                     >()
                 )
             ) : 0,
+            false? this->_boost_type_erasure_deduce_move_constructor(
+                ::boost::type_erasure::detail::make_fallback(
+                    std::move(other),
+                    ::boost::mpl::bool_<
+                        sizeof(
+                            ::boost::type_erasure::detail::check_overload(
+                                ::boost::declval<any&>().
+                                    _boost_type_erasure_deduce_move_constructor(std::move(other))
+                            )
+                        ) == sizeof(::boost::type_erasure::detail::yes)
+                    >()
+                )
+            ) : 0,
             false? this->_boost_type_erasure_deduce_constructor(
                 ::boost::type_erasure::detail::make_fallback(
                     std::move(other),
@@ -1403,6 +1479,7 @@ private:
         const move_assignable<T, U>*,
         const void*,
         const void*,
+        const void*,
         ::boost::mpl::false_)
     {
         ::boost::type_erasure::call(move_assignable<T, U>(), *this, std::move(other));
@@ -1413,6 +1490,7 @@ private:
         Other&& other,
         const void*,
         const assignable<T, U>*,
+        const void*,
         const void*,
         ::boost::mpl::false_)
     {
@@ -1425,6 +1503,7 @@ private:
         const move_assignable<T, U>*,
         const assignable<T, V>*,
         const void*,
+        const void*,
         ::boost::mpl::false_)
     {
         ::boost::type_erasure::call(move_assignable<T, U>(), *this, std::move(other));
@@ -1434,6 +1513,7 @@ private:
     void _boost_type_erasure_assign_impl(
         Other&& other,
         const move_assignable<T, U>*,
+        const void*,
         const void*,
         const void*,
         ::boost::mpl::true_)
@@ -1447,6 +1527,7 @@ private:
         const void*,
         const assignable<T, U>*,
         const void*,
+        const void*,
         ::boost::mpl::true_)
     {
         ::boost::type_erasure::call(assignable<T, U>(), *this, std::move(other));
@@ -1457,6 +1538,7 @@ private:
         Other&& other,
         const move_assignable<T, U>*,
         const assignable<T, V>*,
+        const void*,
         const void*,
         ::boost::mpl::true_)
     {
@@ -1481,6 +1563,7 @@ private:
         const void*,
         const void*,
         const constructible<Sig>*,
+        const void*,
         ::boost::mpl::true_)
     {
         any temp(std::move(other));
@@ -1491,6 +1574,84 @@ private:
     void _boost_type_erasure_assign_impl(
         Other&& other,
         const move_assignable<T, U>*,
+        const void*,
+        const constructible<Sig>*,
+        const void*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(move_assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(move_assignable<T, U>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class Sig>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const void*,
+        const assignable<T, U>*,
+        const constructible<Sig>*,
+        const void*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(assignable<T, U>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class V, class Sig>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const move_assignable<T, U>*,
+        const assignable<T, V>*,
+        const constructible<Sig>*,
+        const void*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(move_assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(move_assignable<T, U>(), *this, std::move(other));
+        }
+        else if(::boost::type_erasure::check_match(assignable<T, V>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(assignable<T, V>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class Sig>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const void*,
+        const void*,
+        const void*,
+        const constructible<Sig>*,
+        ::boost::mpl::true_)
+    {
+        any temp(std::move(other));
+        _boost_type_erasure_swap(temp);
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class Sig>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const move_assignable<T, U>*,
+        const void*,
         const void*,
         const constructible<Sig>*,
         ::boost::mpl::true_)
@@ -1511,6 +1672,7 @@ private:
         Other&& other,
         const void*,
         const assignable<T, U>*,
+        const void*,
         const constructible<Sig>*,
         ::boost::mpl::true_)
     {
@@ -1530,7 +1692,85 @@ private:
         Other&& other,
         const move_assignable<T, U>*,
         const assignable<T, V>*,
+        const void*,
         const constructible<Sig>*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(move_assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(move_assignable<T, U>(), *this, std::move(other));
+        }
+        else if(::boost::type_erasure::check_match(assignable<T, V>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(assignable<T, V>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class Sig1, class Sig2>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const void*,
+        const void*,
+        const constructible<Sig1>*,
+        const constructible<Sig2>*,
+        ::boost::mpl::true_)
+    {
+        any temp(std::move(other));
+        _boost_type_erasure_swap(temp);
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class Sig1, class Sig2>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const move_assignable<T, U>*,
+        const void*,
+        const constructible<Sig1>*,
+        const constructible<Sig2>*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(move_assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(move_assignable<T, U>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class Sig1, class Sig2>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const void*,
+        const assignable<T, U>*,
+        const constructible<Sig1>*,
+        const constructible<Sig2>*,
+        ::boost::mpl::true_)
+    {
+        if(::boost::type_erasure::check_match(assignable<T, U>(), *this, other))  // const reference to other is enough!
+        {
+            ::boost::type_erasure::unchecked_call(assignable<T, U>(), *this, std::move(other));
+        }
+        else
+        {
+            any temp(std::move(other));
+            _boost_type_erasure_swap(temp);
+        }
+    }
+    /** INTERNAL ONLY */
+    template<class Other, class U, class V, class Sig1, class Sig2>
+    void _boost_type_erasure_assign_impl(
+        Other&& other,
+        const move_assignable<T, U>*,
+        const assignable<T, V>*,
+        const constructible<Sig1>*,
+        const constructible<Sig2>*,
         ::boost::mpl::true_)
     {
         if(::boost::type_erasure::check_match(move_assignable<T, U>(), *this, other))  // const reference to other is enough!

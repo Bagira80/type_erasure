@@ -22,6 +22,7 @@ struct any_base
     void* _boost_type_erasure_deduce_constructor(...) { return 0; }
     void* _boost_type_erasure_deduce_assign(...) { return 0; }
 #ifndef BOOST_NO_CXX11_RVALUE_REFERENCES
+    void* _boost_type_erasure_deduce_move_constructor(...) { return 0; }
     void* _boost_type_erasure_deduce_move_assign(...) { return 0; }
 #endif
 };

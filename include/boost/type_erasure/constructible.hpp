@@ -61,7 +61,9 @@ struct vtable_adapter;
 template<class Sig>
 struct constructible {};
 
-#elif !defined(BOOST_NO_CXX11_VARIADIC_TEMPLATES) && \
+#else
+
+#if !defined(BOOST_NO_CXX11_VARIADIC_TEMPLATES) && \
     !defined(BOOST_NO_CXX11_RVALUE_REFERENCES) && \
     !BOOST_WORKAROUND(BOOST_MSVC, == 1800)
 
@@ -124,10 +126,68 @@ struct get_null_vtable_entry<vtable_adapter<constructible<T(const T&)>, R(U...)>
 
 #endif
 
+#if !defined(BOOST_NO_CXX11_RVALUE_REFERENCES) && \
+    !BOOST_WORKAROUND(BOOST_MSVC, == 1800)
+
+/// INTERNAL ONLY
+template<class Base, class Tag>
+struct concept_interface<
+    ::boost::type_erasure::constructible<Tag(Tag&&)>,
+    Base,
+    Tag
+> : Base
+{
+    using Base::_boost_type_erasure_deduce_move_constructor;
+    ::boost::type_erasure::constructible<Tag(Tag&&)>*
+    _boost_type_erasure_deduce_move_constructor(
+        typename ::boost::type_erasure::as_param<Base, Tag&&>::type)
+    {
+        return 0;
+    }
+};
+
+/// INTERNAL ONLY
+template<class Base, class Tag>
+struct concept_interface<
+    ::boost::type_erasure::constructible<Tag(const Tag&)>,
+    Base,
+    Tag
+> : Base
+{
+    using Base::_boost_type_erasure_deduce_constructor;
+    ::boost::type_erasure::constructible<Tag(const Tag&)>*
+    _boost_type_erasure_deduce_constructor(
+        typename ::boost::type_erasure::as_param<Base, const Tag&>::type)
+    {
+        return 0;
+    }
+};
+
+/// INTERNAL ONLY
+template<class Base, class Tag>
+struct concept_interface<
+    ::boost::type_erasure::constructible<Tag(Tag&)>,
+    Base,
+    Tag
+> : Base
+{
+    using Base::_boost_type_erasure_deduce_constructor;
+    ::boost::type_erasure::constructible<Tag(Tag&)>*
+    _boost_type_erasure_deduce_constructor(
+        typename ::boost::type_erasure::as_param<Base, Tag&>::type)
+    {
+        return 0;
+    }
+};
+
+#endif
+
 }
 }
 
-#endif
+#endif  // BOOST_TYPE_ERASURE_DOXYGEN
+
+#endif  // BOOST_TYPE_ERASURE_CONSTRUCTIBLE_HPP_INCLUDED
 
 #else
 

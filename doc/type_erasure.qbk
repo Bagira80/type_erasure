@@ -19,6 +19,7 @@
 [def __constructible [classref boost::type_erasure::constructible constructible]]
 [def __destructible [classref boost::type_erasure::destructible destructible]]
 [def __copy_constructible [classref boost::type_erasure::copy_constructible copy_constructible]]
+[def __move_constructible [classref boost::type_erasure::move_constructible move_constructible]]
 [def __assignable [classref boost::type_erasure::assignable assignable]]
 [def __move_assignable [classref boost::type_erasure::move_assignable move_assignable]]
 [def __typeid_ [classref boost::type_erasure::typeid_ typeid_]]
@@ -360,16 +361,17 @@ added to the arguments and results as appropriate.
 
 Except as otherwise noted, primitive concepts defined by
 the library can be specialized to provide concept maps.
-__copy_constructible, and the iterator concepts cannot
-be specialized because they are composites.  __constructible,
-__destructible, __typeid_, and __same_type cannot be
-specialized because they require special handling in
-the library.
+__copy_constructible, __move_constructible, and the iterator
+concepts cannot be specialized because they are composites.
+__constructible, __destructible, __typeid_, and __same_type
+cannot be specialized because they require special handling
+in the library.
 
 [table:special Special Members
     [[concept][notes]]
     [[__constructible`<Sig>`][-]]
     [[__copy_constructible`<T>`][-]]
+    [[__move_constructible`<T>`][-]]
     [[__destructible`<T>`][-]]
     [[__assignable`<T, U = T>`][-]]
     [[__move_assignable`<T, U = T>`][`U` should be an unqualified type]]
